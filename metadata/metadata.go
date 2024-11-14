@@ -46,11 +46,8 @@ var (
 	reHeaderPatternMacro = regexp.MustCompile(`<!-- Macro: .*`)
 )
 
-func ExtractMeta(data []byte, spaceFromCli string, titleFromH1 bool, parents []string, titleAppendGeneratedHash bool) (*Meta, []byte, error) {
-	var (
-		meta   *Meta
-		offset int
-	)
+func ExtractMeta(meta *Meta, data []byte, spaceFromCli string, titleFromH1 bool, parents []string, titleAppendGeneratedHash bool) (*Meta, []byte, error) {
+	var offset int
 
 	scanner := bufio.NewScanner(bytes.NewBuffer(data))
 	for scanner.Scan() {

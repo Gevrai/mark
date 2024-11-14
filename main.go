@@ -33,10 +33,10 @@ const (
 )
 
 var flags = []cli.Flag{
-	altsrc.NewStringFlag(&cli.StringFlag{
+	altsrc.NewStringSliceFlag(&cli.StringSliceFlag{
 		Name:      "files",
 		Aliases:   []string{"f"},
-		Value:     "",
+		Value:     &cli.StringSlice{},
 		Usage:     "use specified markdown file(s) for converting to html. Supports file globbing patterns (needs to be quoted).",
 		TakesFile: true,
 		EnvVars:   []string{"MARK_FILES"},
@@ -196,6 +196,13 @@ var flags = []cli.Flag{
 		TakesFile: true,
 		EnvVars:   []string{"MARK_INCLUDE_PATH"},
 	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:      "with-prelude",
+		Value:     "",
+		Usage:     "File to insert at the beginning of every rendered markdown files. Can include metadata.",
+		TakesFile: true,
+		EnvVars:   []string{"MARK_WITH_HEADER"},
+	}),
 }
 
 func main() {
@@ -255,9 +262,13 @@ func RunMark(cCtx *cli.Context) error {
 
 	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password)
 
-	files, err := doublestar.FilepathGlob(cCtx.String("files"))
-	if err != nil {
-		return err
+	var files []string
+	for _, filesglob := range cCtx.StringSlice("files") {
+		expanded, err := doublestar.FilepathGlob(filesglob)
+		if err != nil {
+			return err
+		}
+		files = append(files, expanded...)
 	}
 	if len(files) == 0 {
 		msg := "No files matched"
@@ -278,6 +289,16 @@ func RunMark(cCtx *cli.Context) error {
 		}
 	}
 
+	// Read the prelude file and sanitize
+	var prelude []byte
+	if preludeFile := cCtx.String("prelude"); preludeFile != "" {
+		prelude, err = os.ReadFile(preludeFile)
+		if err != nil {
+			log.Fatal("could not read prelude file", err)
+		}
+		prelude = bytes.ReplaceAll(prelude, []byte("\r\n"), []byte("\n"))
+	}
+
 	// Loop through files matched by glob pattern
 	for _, file := range files {
 		log.Infof(
@@ -286,7 +307,7 @@ func RunMark(cCtx *cli.Context) error {
 			file,
 		)
 
-		target := processFile(file, api, cCtx, creds.PageID, creds.Username)
+		target := processFile(file, prelude, api, cCtx, creds.PageID, creds.Username)
 
 		log.Infof(
 			nil,
@@ -301,6 +322,7 @@ func RunMark(cCtx *cli.Context) error {
 
 func processFile(
 	file string,
+	prelude []byte,
 	api *confluence.API,
 	cCtx *cli.Context,
 	pageID string,
@@ -315,9 +337,24 @@ func processFile(
 
 	parents := strings.Split(cCtx.String("parents"), cCtx.String("parents-delimiter"))
 
-	meta, markdown, err := metadata.ExtractMeta(markdown, cCtx.String("space"), cCtx.Bool("title-from-h1"), parents, cCtx.Bool("title-append-generated-hash"))
+	var meta *metadata.Meta
+	if len(prelude) > 0 {
+		// Extract meta from prelude first, keeping the rest to eventually append to the markdown
+		meta, prelude, err = metadata.ExtractMeta(meta, prelude, "", false, nil, false)
+		if err != nil {
+			log.Fatal(err)
+		}
+		prelude = bytes.TrimSpace(prelude)
+	}
+	meta, markdown, err = metadata.ExtractMeta(meta, markdown, cCtx.String("space"), cCtx.Bool("title-from-h1"), parents, cCtx.Bool("title-append-generated-hash"))
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if len(prelude) > 0 {
+		// Prepend the prelude to the processed markdown
+		prelude = append(prelude, byte('\n'))
+		markdown = append(prelude, markdown...)
 	}
 
 	if pageID != "" && meta != nil {

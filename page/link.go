@@ -107,7 +107,7 @@ func resolveLink(
 
 		// This helps to determine if found link points to file that's
 		// not markdown or have mark required metadata
-		linkMeta, _, err := metadata.ExtractMeta(linkContents, spaceFromCli, titleFromH1, parents, titleAppendGeneratedHash)
+		linkMeta, _, err := metadata.ExtractMeta(nil, linkContents, spaceFromCli, titleFromH1, parents, titleAppendGeneratedHash)
 		if err != nil {
 			log.Errorf(
 				err,
