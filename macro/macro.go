@@ -3,6 +3,7 @@ package macro
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"regexp"
 	"strings"
 	"text/template"
@@ -33,6 +34,7 @@ type Macro struct {
 
 func (macro *Macro) Apply(
 	content []byte,
+	values map[string]interface{},
 ) ([]byte, error) {
 	var err error
 
@@ -40,6 +42,7 @@ func (macro *Macro) Apply(
 		content,
 		func(match []byte) []byte {
 			config := map[string]interface{}{}
+			maps.Copy(config, values)
 
 			err = yaml.Unmarshal([]byte(macro.Config), &config)
 			if err != nil {

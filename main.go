@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/kovetskiy/lorg"
 	"github.com/kovetskiy/mark/attachment"
@@ -196,6 +198,17 @@ var flags = []cli.Flag{
 		TakesFile: true,
 		EnvVars:   []string{"MARK_INCLUDE_PATH"},
 	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:      "values-file",
+		TakesFile: true,
+		Usage:     "Values file in yaml format to use in templates for includes and macros expansions",
+		EnvVars:   []string{"MARK_VALUES_FILE"},
+	}),
+	altsrc.NewStringSliceFlag(&cli.StringSliceFlag{
+		Name:  "value",
+		Value: &cli.StringSlice{},
+		Usage: "Values to set in templates for includes and macros expansions",
+	}),
 }
 
 func main() {
@@ -253,6 +266,11 @@ func RunMark(cCtx *cli.Context) error {
 		return err
 	}
 
+	templateValues, err := extractTemplateValues(cCtx)
+	if err != nil {
+		return err
+	}
+
 	api := confluence.NewAPI(creds.BaseURL, creds.Username, creds.Password)
 
 	files, err := doublestar.FilepathGlob(cCtx.String("files"))
@@ -286,7 +304,7 @@ func RunMark(cCtx *cli.Context) error {
 			file,
 		)
 
-		target := processFile(file, api, cCtx, creds.PageID, creds.Username)
+		target := processFile(file, api, cCtx, creds.PageID, creds.Username, templateValues)
 
 		log.Infof(
 			nil,
@@ -305,6 +323,7 @@ func processFile(
 	cCtx *cli.Context,
 	pageID string,
 	username string,
+	values map[string]interface{},
 ) *confluence.PageInfo {
 	markdown, err := os.ReadFile(file)
 	if err != nil {
@@ -365,6 +384,7 @@ func processFile(
 			cCtx.String("include-path"),
 			markdown,
 			templates,
+			values,
 		)
 		if err != nil {
 			log.Fatal(err)
@@ -388,7 +408,7 @@ func processFile(
 	macros = append(macros, stdlib.Macros...)
 
 	for _, macro := range macros {
-		markdown, err = macro.Apply(markdown)
+		markdown, err = macro.Apply(markdown, values)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -618,4 +638,27 @@ func configFilePath() string {
 		log.Fatal(err)
 	}
 	return filepath.Join(fp, "mark")
+}
+
+func extractTemplateValues(cCtx *cli.Context) (map[string]any, error) {
+	values := map[string]any{}
+
+	if file := cCtx.String("values-file"); file != "" {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read values-file: %w", err)
+		}
+		if err := yaml.Unmarshal(content, &values); err != nil {
+			return nil, fmt.Errorf("unable to parse values-file: %w", err)
+		}
+	}
+
+	for _, v := range cCtx.StringSlice("value") {
+		key, value, ok := strings.Cut(v, "=")
+		if !ok {
+			return nil, fmt.Errorf("unexpected format for value %q: expected 'key=value'", v)
+		}
+		values[key] = value
+	}
+	return values, nil
 }

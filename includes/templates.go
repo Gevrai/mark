@@ -3,6 +3,7 @@ package includes
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -79,12 +80,7 @@ func LoadTemplate(
 	return templates, nil
 }
 
-func ProcessIncludes(
-	base string,
-	includePath string,
-	contents []byte,
-	templates *template.Template,
-) (*template.Template, []byte, bool, error) {
+func ProcessIncludes(base string, includePath string, contents []byte, templates *template.Template, values map[string]interface{}) (*template.Template, []byte, bool, error) {
 	vardump := func(
 		facts *karma.Context,
 		data map[string]interface{},
@@ -124,10 +120,12 @@ func ProcessIncludes(
 				left       = string(groups[3])
 				right      = string(groups[4])
 				config     = groups[5]
-				data       = map[string]interface{}{}
 
 				facts = karma.Describe("path", path)
 			)
+
+			data := map[string]interface{}{}
+			maps.Copy(data, values)
 
 			if delimsNone == "none" {
 				left = "\x00"
